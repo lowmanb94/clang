@@ -30,7 +30,12 @@ namespace {
     class LockSetChecker : public Checker<check::PreCall> {
     public:
       void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
+
+      // utility functions
       static unsigned int getState(unsigned int curr_state, int op, int thread);
+      static bool isLockingCall(llvm::StringRef name);
+      static bool isUnlockingCall(llvm::StringRef name);
+      static bool isSpawnCall(llvm::StringRef name);
     };
 };
 
@@ -85,7 +90,7 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
     if (ID == NULL)
         return;
 
-    printf("%s\n", ID->getName());
+    printf("%s\n", ID->getName().str().c_str());
 
 }
 
