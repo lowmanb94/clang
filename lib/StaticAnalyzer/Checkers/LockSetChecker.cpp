@@ -7,27 +7,36 @@
 using namespace clang;
 using namespace ento;
 
+// defines read/write operations
 #define OP_READ         0
 #define OP_WRITE        1
+
 // location state is encoded as 4 byte bit field. The bottom 8 bits are reserved 
 // for the state type below. The top bits are reserved for the associated tid
-// required for the exclusive state
+// required for the exclusive state.
 #define STATE_VIRGIN           0
 #define STATE_EXCLUSIVE        1 
 #define STATE_SHARED           2
 #define STATE_SHARED_MODIFIED  3
 
+// Useful lock set values. Sets are encoded as an 8 byte bit field.
+// An empty set has the value 0. A special set representing "all posible locks"
+// has the topmost bit set. In this scheme, set intersection is just bitwise AND.
+// The downside is that we can only handle 63 locks. This is probably enough.
+#define LOCK_SET_EMPTY    0
+#define LOCK_SET_UNIVERSE 0x8000000000000000
+
 namespace {
     class LockSetChecker : public Checker<check::PreCall> {
     public:
       void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
-      static unsigned int getState(int curr_state, int op, int thread);
+      static unsigned int getState(unsigned int curr_state, int op, int thread);
     };
 };
 
 // given a current location state, operation, and tid, returns the new state. 
 // This is just the state machine diagram from the lockset/eraser paper.
-static unsigned int LockSetChecker::getState(unsigned int curr_state, int op, int tid) {
+unsigned int LockSetChecker::getState(unsigned int curr_state, int op, int tid) {
     
     // switch on the bottom byte of the current state
     switch ( (char) curr_state ) {
