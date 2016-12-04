@@ -88,6 +88,8 @@ add_clang_library(clangStaticAnalyzerCheckers
   ValistChecker.cpp
   VirtualCallChecker.cpp
 
+  LockSetChecker.cpp
+
   DEPENDS
   ClangSACheckers
 

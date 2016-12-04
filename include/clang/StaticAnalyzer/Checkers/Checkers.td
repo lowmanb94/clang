@@ -444,6 +444,10 @@ def BlockInCriticalSectionChecker : Checker<"BlockInCriticalSection">,
   HelpText<"Check for calls to blocking functions inside a critical section">,
   DescFile<"BlockInCriticalSectionChecker.cpp">;
 
+def LockSetChecker : Checker<"LockSetChecker">,
+    HelpText<"Find pthreads race conditions using the lockset Algorithm">,
+    DescFile<"TestChecker.cpp">;
+
 } // end "alpha.unix"
 
 let ParentPackage = CString in {
@@ -721,4 +725,3 @@ def CloneChecker : Checker<"CloneChecker">,
   DescFile<"CloneChecker.cpp">;
 
 } // end "clone"
-
