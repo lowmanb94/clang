@@ -9,11 +9,13 @@ CHECKER=alpha.unix.LockSetChecker
 # couldn't get the clang build flags to work
 INCLUDE='-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/8.0.0/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/usr/include -I /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/System/Library/Frameworks'
 
+SUB_SCRIPT=/Users/ben/llvm/tools/clang/lockset/thread_func_rename.py
+
 # exit if any command fails
 set -e
 
 if [ -z "$1" ]; then
-    echo "USAGE: lsa [-html] <input file>"
+    echo "USAGE: lockset-analyzer [-html] <input file>"
     exit
 fi
 
@@ -29,7 +31,7 @@ TMP_DIR=$(mktemp -d)
 cp $FILE $TMP_DIR
 
 # run python script on file in tmp dir
-python thread_func_rename.py $TMP_DIR/$FILE > /dev/null
+python $SUB_SCRIPT $TMP_DIR/$FILE > /dev/null
 
 # get handle to the regexe'd file
 NEW_FILE=new_$FILE
@@ -41,9 +43,11 @@ if [ "$1" == "-html" ]; then
     # open html if it exists
     if [[ -f $TMP_DIR/*html ]]; then
         open $TMP_DIR/*.html
+        rm -f $TMP_DIR/$FILE
+        rm -f $TMP_DIR/$NEW_FILE
+    else
+        rm -rf $TMP_DIR
     fi
-    rm -f $TMP_DIR/$FILE
-    rm -f $TMP_DIR/$NEW_FILE
 else
     # otherwise just stick with text output
     $CLANG $TMP_DIR/$NEW_FILE --analyze -Xanalyzer -analyzer-output=text -Xanalyzer \
