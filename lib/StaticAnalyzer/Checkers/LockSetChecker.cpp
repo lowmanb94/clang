@@ -322,7 +322,8 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
 
     ProgramStateRef s = C.getState();
 
-    const MemRegion *loc = Loc.getAsRegion();
+    // note that we strip casts from memory region
+    const MemRegion *loc = Loc.getAsRegion()->StripCasts();
 
     /*
     if (loc2 != NULL)
@@ -379,10 +380,10 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
     /*
     if (activeThread == 1)
     {
-        if (IsLoad)
-            printf("%d: R: %s\n", activeThread, loc->getString().c_str());
-        else
-            printf("%d: W: %s\n", activeThread, loc->getBaseRegion()->StripCasts()->getString().c_str());
+      if (IsLoad)
+          printf("%d: R: %s\n", activeThread, loc->getString().c_str());
+      else
+          printf("%d: W: %s\n", activeThread, loc->StripCasts()->getString().c_str());
     }
     */
 
@@ -398,8 +399,9 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
         ExplodedNode *N = C.generateNonFatalErrorNode(s);
         if (N) {
             if (!BT_raceCondition)
-                BT_raceCondition.reset(new BuiltinBug(this, "Race condition on memory location.",
-                                                            "LockSet checker"));
+                BT_raceCondition.reset(new BuiltinBug(this, "LockSet checker",
+                                                            "Race condition detected on this memory access. "
+                                                            "Check locking discpline." ));
             C.emitReport(llvm::make_unique<BugReport>(*BT_raceCondition,
                 BT_raceCondition->getDescription(), N));
         }
