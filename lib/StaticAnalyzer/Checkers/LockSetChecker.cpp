@@ -151,7 +151,7 @@ void LockSetChecker::printState(unsigned state) {
             break;
         case STATE_EXCLUSIVE:
             tid = state >> 8;
-            printf("EXCLUSIVE(%d)\n", tid); 
+            printf("EXCLUSIVE(%d)\n", tid);
             break;
         case STATE_SHARED:
             puts("SHARED");
@@ -291,14 +291,16 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
     // get the function name from the declaration
     std::string funcName = callSiteFunc->getNameInfo().getAsString();
 
-    // this is a huge hack, but the checker executes on 
-    // on functions that aren't called from main after 
-    // prqcessing main. This doesn't make sense for our 
+    // this is a huge hack, but the checker executes on
+    // on functions that aren't called from main after
+    // prqcessing main. This doesn't make sense for our
     // analysis.
-    if (funcName == "main") 
-        exit(0);
 
-    else if ( isSpawn(funcName) ) {
+    // FIXME FIXME FIXME
+    // if (funcName == "main")
+    //     exit(0);
+
+    if ( isSpawn(funcName) ) {
 
         // get the relevant state
         ActiveThreadTy activeThread = s->get<ActiveThread>();
@@ -316,7 +318,7 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
 }
 
 void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const {
-    
+
 
     ProgramStateRef s = C.getState();
 
@@ -332,7 +334,7 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
         puts("lock arg is not mem region");
         return;
     }
-    
+
     // get active thread
     ActiveThreadTy activeThread = s->get<ActiveThread>();
 
@@ -345,7 +347,7 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
         locksHeld = LOCK_SET_EMPTY;
     } else
         locksHeld = *locksHeldPtr;
-    
+
     // get the lockset bit field
     const unsigned long *lockSetPtr = s->get<LockSetMap>(loc);
     unsigned long lockSet;
@@ -361,7 +363,7 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
         locState = STATE_VIRGIN;
     else
         locState = *locStatePtr;
-        
+
     // do the intersection
     // secret magic sauce
     if (lockSet == LOCK_SET_UNIVERSE)
@@ -391,9 +393,8 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
     //puts("---------");
 
     if (lockSet == LOCK_SET_EMPTY && locState == STATE_SHARED_MODIFIED) {
-            
         // generate error node -- keep analyzing
-        // This could be improved to provide more detail
+        // This should be improved to provide more detail
         ExplodedNode *N = C.generateNonFatalErrorNode(s);
         if (N) {
             if (!BT_raceCondition)
@@ -409,9 +410,7 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
 
     // push state into context
     C.addTransition(s);
-
 }
-
 
 // Registration code (not sure how this works exactly)
 void ento::registerLockSetChecker(CheckerManager &mgr) {

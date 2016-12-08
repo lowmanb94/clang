@@ -1,0 +1,53 @@
+#! /bin/sh
+
+# this is specific to my (ben's) machine.
+# You will have to plug in the appropriate paths
+# on your own system.
+
+CLANG=/Users/ben/llvm/build/bin/clang
+CHECKER=alpha.unix.LockSetChecker
+# couldn't get the clang build flags to work
+INCLUDE='-I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/8.0.0/include -I/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/usr/include -I /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/System/Library/Frameworks'
+
+# exit if any command fails
+set -e
+
+if [ -z "$1" ]; then
+    echo "USAGE: lsa [-html] <input file>"
+    exit
+fi
+
+# set the input file
+if [ "$1" == "-html" ]; then
+    FILE=$2
+else
+    FILE=$1
+fi
+
+# copy target file to tmp directory
+TMP_DIR=$(mktemp -d)
+cp $FILE $TMP_DIR
+
+# run python script on file in tmp dir
+python thread_func_rename.py $TMP_DIR/$FILE > /dev/null
+
+# get handle to the regexe'd file
+NEW_FILE=new_$FILE
+
+if [ "$1" == "-html" ]; then
+    # check file, open resulting the html
+    $CLANG -o $TMP_DIR $TMP_DIR/$NEW_FILE --analyze -Xanalyzer -analyzer-output=html -Xanalyzer \
+    -analyzer-checker=$CHECKER $INCLUDE
+    # open html if it exists
+    if [[ -f $TMP_DIR/*html ]]; then
+        open $TMP_DIR/*.html
+    fi
+    rm -f $TMP_DIR/$FILE
+    rm -f $TMP_DIR/$NEW_FILE
+else
+    # otherwise just stick with text output
+    $CLANG $TMP_DIR/$NEW_FILE --analyze -Xanalyzer -analyzer-output=text -Xanalyzer \
+    -analyzer-checker=$CHECKER $INCLUDE
+    rm -rf $TMP_DIR
+fi
+
