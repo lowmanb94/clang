@@ -1,6 +1,7 @@
 #include "ClangSACheckers.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
+#include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 
@@ -41,14 +42,21 @@ using namespace ento;
 
 namespace {
     class LockSetChecker : public Checker< check::PreCall,
-                                           check::EndFunction > {
+                                           check::EndFunction,
+                                           check::Location > {
+
+    // but type
+    mutable std::unique_ptr<BuiltinBug> BT_raceCondition;
+
     public:
         void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
         void checkEndFunction(CheckerContext &C) const;
+        void checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const;
         // TODO memory location read/write hook WITH ERRORS
 
         // utility functions
         static unsigned int getState(unsigned int curr_state, int op, int thread);
+        static void printState(unsigned state);
         static inline bool isLock(llvm::StringRef s);
         static inline bool isUnlock(llvm::StringRef s);
         static inline bool isSpawn(llvm::StringRef s);
@@ -83,10 +91,13 @@ REGISTER_MAP_WITH_PROGRAMSTATE(LocLockMap, const MemRegion *, unsigned)
 // locks held by each thread. 8 byte bit field
 REGISTER_MAP_WITH_PROGRAMSTATE(ThreadLockMap, unsigned, unsigned long)
 
+// mem locations -> lockset
+REGISTER_MAP_WITH_PROGRAMSTATE(LockSetMap, const MemRegion *, unsigned long)
+// mem locations -> state
+REGISTER_MAP_WITH_PROGRAMSTATE(StateMap, const MemRegion *, unsigned long)
+
 // TODO
 // add the memory location -> state map
-
-// TODO figure out barriers (maybe?)
 
 // ####################
 //
@@ -131,6 +142,25 @@ unsigned LockSetChecker::getState(unsigned curr_state, int op, int tid) {
     return curr_state;
 }
 
+// extremely useful for dubugging
+void LockSetChecker::printState(unsigned state) {
+    int tid;
+    switch ( (char) state ) {
+        case STATE_VIRGIN:
+            puts("VIRGIN");
+            break;
+        case STATE_EXCLUSIVE:
+            tid = state >> 8;
+            printf("EXCLUSIVE(%d)\n", tid); 
+            break;
+        case STATE_SHARED:
+            puts("SHARED");
+            break;
+        default:
+            puts("SHARED_MODIFIED");
+    }
+}
+
 
 // TODO maybe we could parameterize these strings somehow?
 // make it "flexible"
@@ -173,7 +203,7 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
         TidTy tid = s->get<Tid>() + 1;
         ActiveThreadTy activeThread = s->get<ActiveThread>();
 
-        printf("%s: %d -> %d\n", funcName.str().c_str(), activeThread, tid);
+        //printf("%s: %d -> %d\n", funcName.str().c_str(), activeThread, tid);
 
         // set the new state
         s = s->set<PrevThreadMap>(tid, activeThread);
@@ -234,6 +264,7 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
         s = s->set<ThreadLockMap>(activeThread, locksHeld);
 
         // debugging
+        /*
         if (isLock(funcName))
             printf("%2dL: ", activeThread);
         else
@@ -241,6 +272,7 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
         for (int i = 0; i < 4; i++)
             printf("%lu", (locksHeld >> i) & 1);
         printf("\n");
+        */
 
     }
 
@@ -259,13 +291,20 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
     // get the function name from the declaration
     std::string funcName = callSiteFunc->getNameInfo().getAsString();
 
-    if ( isSpawn(funcName) ) {
+    // this is a huge hack, but the checker executes on 
+    // on functions that aren't called from main after 
+    // prqcessing main. This doesn't make sense for our 
+    // analysis.
+    if (funcName == "main") 
+        exit(0);
+
+    else if ( isSpawn(funcName) ) {
 
         // get the relevant state
         ActiveThreadTy activeThread = s->get<ActiveThread>();
         unsigned prevThread = *(s->get<PrevThreadMap>(activeThread));
 
-        printf("ret: %d -> %d\n", activeThread, prevThread);
+        //printf("ret: %d -> %d\n", activeThread, prevThread);
 
         // update the state
         s = s->set<ActiveThread>(prevThread);
@@ -275,6 +314,104 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
     // push state into context
     C.addTransition(s);
 }
+
+void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const {
+    
+
+    ProgramStateRef s = C.getState();
+
+    const MemRegion *loc = Loc.getAsRegion();
+
+    /*
+    if (loc2 != NULL)
+        printf("raw: %s\nret: %s\n", reg, loc2->getSyk.c_str());
+    */
+
+    // this is here just in case
+    if (!loc) {
+        puts("lock arg is not mem region");
+        return;
+    }
+    
+    // get active thread
+    ActiveThreadTy activeThread = s->get<ActiveThread>();
+
+    // get the locks held bit field
+    // initialize the ThreadLoc map if first time processing thread
+    const unsigned long *locksHeldPtr = s->get<ThreadLockMap>(activeThread);
+    unsigned long locksHeld;
+    if (locksHeldPtr == NULL) {
+        s = s->set<ThreadLockMap>(activeThread, LOCK_SET_EMPTY);
+        locksHeld = LOCK_SET_EMPTY;
+    } else
+        locksHeld = *locksHeldPtr;
+    
+    // get the lockset bit field
+    const unsigned long *lockSetPtr = s->get<LockSetMap>(loc);
+    unsigned long lockSet;
+    if (lockSetPtr == NULL)
+        lockSet = LOCK_SET_UNIVERSE;
+    else
+        lockSet = *lockSetPtr;
+
+    // get the current state
+    const unsigned long *locStatePtr = s->get<StateMap>(loc);
+    unsigned long locState;
+    if (locStatePtr == NULL)
+        locState = STATE_VIRGIN;
+    else
+        locState = *locStatePtr;
+        
+    // do the intersection
+    // secret magic sauce
+    if (lockSet == LOCK_SET_UNIVERSE)
+        lockSet = locksHeld;
+    else
+        lockSet &= locksHeld;
+
+    // update the location state
+
+    //puts("---------");
+    //printState(locState);
+
+    /*
+    if (activeThread == 1)
+    {
+        if (IsLoad)
+            printf("%d: R: %s\n", activeThread, loc->getString().c_str());
+        else
+            printf("%d: W: %s\n", activeThread, loc->getBaseRegion()->StripCasts()->getString().c_str());
+    }
+    */
+
+    int op = IsLoad ? OP_READ : OP_WRITE;
+    locState = getState(locState, op, activeThread);
+
+    //printState(locState);
+    //puts("---------");
+
+    if (lockSet == LOCK_SET_EMPTY && locState == STATE_SHARED_MODIFIED) {
+            
+        // generate error node -- keep analyzing
+        // This could be improved to provide more detail
+        ExplodedNode *N = C.generateNonFatalErrorNode(s);
+        if (N) {
+            if (!BT_raceCondition)
+                BT_raceCondition.reset(new BuiltinBug(this, "Race condition on memory location.",
+                                                            "LockSet checker"));
+            C.emitReport(llvm::make_unique<BugReport>(*BT_raceCondition,
+                BT_raceCondition->getDescription(), N));
+        }
+    }
+
+    s = s->set<StateMap>(loc, locState);
+    s = s->set<LockSetMap>(loc, lockSet);
+
+    // push state into context
+    C.addTransition(s);
+
+}
+
 
 // Registration code (not sure how this works exactly)
 void ento::registerLockSetChecker(CheckerManager &mgr) {
