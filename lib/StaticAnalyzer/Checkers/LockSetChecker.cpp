@@ -214,7 +214,13 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
     } else if (isLock(funcName) || isUnlock(funcName)) {
 
         // get memory region of mutex argument
-        const MemRegion *lockLoc = s->getSVal(Call.getArgExpr(0), LCtx).getAsRegion();
+        SVal arg = s->getSVal(Call.getArgExpr(0), LCtx);
+        // return immediately if the lock is unknown
+        if (arg.isUnknownOrUndef())
+            return;
+
+        // get lock as memory region
+        const MemRegion *lockLoc = arg.getAsRegion()->StripCasts();
 
         // this is here just in case
         if (!lockLoc) {
@@ -319,6 +325,9 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
 
 void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const {
 
+    // give up immediately in loc is undefined
+    if (Loc.isUnknownOrUndef())
+        return;
 
     ProgramStateRef s = C.getState();
 
