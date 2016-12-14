@@ -42,7 +42,8 @@ using namespace ento;
 
 namespace {
     class LockSetChecker : public Checker< check::PreCall,
-                                           check::EndFunction,
+                                           //check::EndFunction,
+                                           check::PostCall,
                                            check::Location > {
 
     // but type
@@ -50,7 +51,8 @@ namespace {
 
     public:
         void checkPreCall(const CallEvent &Call, CheckerContext &C) const;
-        void checkEndFunction(CheckerContext &C) const;
+        //void checkEndFunction(CheckerContext &C) const;
+        void checkPostCall(const CallEvent &Call, CheckerContext &C) const;
         void checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const;
         // TODO memory location read/write hook WITH ERRORS
 
@@ -181,7 +183,6 @@ inline bool LockSetChecker::isSpawn(llvm::StringRef s) {
 void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) const {
 
     ProgramStateRef s = C.getState();
-    const LocationContext *LCtx = C.getLocationContext();
 
     // get the calling function identifier
     const IdentifierInfo *ID = Call.getCalleeIdentifier();
@@ -195,6 +196,7 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
     // allias function name
     // std::string is seamlessly cast to llvm::StringRef
     llvm::StringRef funcName = ID->getName();
+
 
     // update the virtual thread information
     if (isSpawn(funcName)) {
@@ -212,6 +214,9 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
         s = s->set<Tid>(tid);
 
     } else if (isLock(funcName) || isUnlock(funcName)) {
+
+        // get the current location context
+        const LocationContext *LCtx = C.getLocationContext();
 
         // get memory region of mutex argument
         SVal arg = s->getSVal(Call.getArgExpr(0), LCtx);
@@ -287,24 +292,20 @@ void LockSetChecker::checkPreCall(const CallEvent &Call, CheckerContext &C) cons
 
 }
 
-// pops a thread from the thread "stack" (actually a map)
-void LockSetChecker::checkEndFunction(CheckerContext &C) const {
+void LockSetChecker::checkPostCall(const CallEvent &Call, CheckerContext &C) const {
 
     ProgramStateRef s = C.getState();
 
-    // get the calling function declaration
-    FunctionDecl* callSiteFunc = (FunctionDecl*)C.getStackFrame()->getDecl();
-    // get the function name from the declaration
-    std::string funcName = callSiteFunc->getNameInfo().getAsString();
+    const IdentifierInfo *ID = Call.getCalleeIdentifier();
 
-    // this is a huge hack, but the checker executes on
-    // on functions that aren't called from main after
-    // prqcessing main. This doesn't make sense for our
-    // analysis.
+    if (ID == NULL) {
+        puts("call return event ID is null");
+        return;
+    }
 
-    // FIXME FIXME FIXME
-    // if (funcName == "main")
-    //     exit(0);
+    // allias function name
+    // std::string is seamlessly cast to llvm::StringRef
+    llvm::StringRef funcName = ID->getName();
 
     if ( isSpawn(funcName) ) {
 
@@ -323,6 +324,7 @@ void LockSetChecker::checkEndFunction(CheckerContext &C) const {
     C.addTransition(s);
 }
 
+// pops a thread from the thread "stack" (actually a map)
 void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, CheckerContext &C) const {
 
     // give up immediately in loc is undefined
@@ -405,7 +407,7 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
     if (lockSet == LOCK_SET_EMPTY && locState == STATE_SHARED_MODIFIED) {
         // generate error node -- keep analyzing
         // This should be improved to provide more detail
-        ExplodedNode *N = C.generateNonFatalErrorNode(s);
+        ExplodedNode *N = C.generateErrorNode(s);
         if (N) {
             if (!BT_raceCondition)
                 BT_raceCondition.reset(new BuiltinBug(this, "LockSet checker",
@@ -413,6 +415,8 @@ void LockSetChecker::checkLocation(SVal Loc, bool IsLoad, const Stmt *S, Checker
                                                             "Check locking discpline." ));
             C.emitReport(llvm::make_unique<BugReport>(*BT_raceCondition,
                 BT_raceCondition->getDescription(), N));
+            // only return this terminating error
+            return;
         }
     }
 
