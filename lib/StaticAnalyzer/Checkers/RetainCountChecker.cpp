@@ -3986,9 +3986,11 @@ void RetainCountChecker::printState(raw_ostream &Out, ProgramStateRef State,
 // Checker registration.
 //===----------------------------------------------------------------------===//
 
+/*
 void ento::registerRetainCountChecker(CheckerManager &Mgr) {
   Mgr.registerChecker<RetainCountChecker>(Mgr.getAnalyzerOptions());
 }
+*/
 
 //===----------------------------------------------------------------------===//
 // Implementation of the CallEffects API.

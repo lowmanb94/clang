@@ -4230,50 +4230,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-analyzer-eagerly-assume");
 
     // Add default argument set.
-    if (!Args.hasArg(options::OPT__analyzer_no_default_checks)) {
+    if (!Args.hasArg(options::OPT__analyzer_no_default_checks))
       CmdArgs.push_back("-analyzer-checker=core");
-
-    if (!IsWindowsMSVC) {
-      CmdArgs.push_back("-analyzer-checker=unix");
-    } else {
-      // Enable "unix" checkers that also work on Windows.
-      CmdArgs.push_back("-analyzer-checker=unix.API");
-      CmdArgs.push_back("-analyzer-checker=unix.Malloc");
-      CmdArgs.push_back("-analyzer-checker=unix.MallocSizeof");
-      CmdArgs.push_back("-analyzer-checker=unix.MismatchedDeallocator");
-      CmdArgs.push_back("-analyzer-checker=unix.cstring.BadSizeArg");
-      CmdArgs.push_back("-analyzer-checker=unix.cstring.NullArg");
-    }
-
-      // Disable some unix checkers for PS4.
-      if (IsPS4CPU) {
-        CmdArgs.push_back("-analyzer-disable-checker=unix.API");
-        CmdArgs.push_back("-analyzer-disable-checker=unix.Vfork");
-      }
-
-      if (getToolChain().getTriple().getVendor() == llvm::Triple::Apple)
-        CmdArgs.push_back("-analyzer-checker=osx");
-
-      CmdArgs.push_back("-analyzer-checker=deadcode");
-
-      if (types::isCXX(Input.getType()))
-        CmdArgs.push_back("-analyzer-checker=cplusplus");
-
-      if (!IsPS4CPU) {
-        CmdArgs.push_back(
-            "-analyzer-checker=security.insecureAPI.UncheckedReturn");
-        CmdArgs.push_back("-analyzer-checker=security.insecureAPI.getpw");
-        CmdArgs.push_back("-analyzer-checker=security.insecureAPI.gets");
-        CmdArgs.push_back("-analyzer-checker=security.insecureAPI.mktemp");
-        CmdArgs.push_back("-analyzer-checker=security.insecureAPI.mkstemp");
-        CmdArgs.push_back("-analyzer-checker=security.insecureAPI.vfork");
-      }
-
-      // Default nullability checks.
-      CmdArgs.push_back("-analyzer-checker=nullability.NullPassedToNonnull");
-      CmdArgs.push_back(
-          "-analyzer-checker=nullability.NullReturnedFromNonnull");
-    }
 
     // Set the output format. The default is plist, for (lame) historical
     // reasons.
