@@ -6,7 +6,7 @@ pthread_barrier_t b;
 
 void thread_func(void *arg)
 {
-    int tid = *(unsigned*)arg;
+    int tid = (unsigned*)arg;
 
     if (tid == 0)
         i++; 
